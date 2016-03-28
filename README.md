@@ -17,5 +17,5 @@ commons/utils: contains custom utilities built for OpenFlow programming.
 learning-switch: contains the tutorial L2 hub / switch.
 tapapp: contains the traffic monitoring tap application.
 features: defines the two features "sdnhub-tutorial-learning-switch", * "sdnhub-tutorial-tapapp" that can be loaded in Karaf.
-distribution/karaf-branding: contains karaf branner for SDN Hub.
+distribution/karaf-branding: contains karaf branner for SDN Hub
 distribution/opendaylight-karaf: contains packaging relevant pom to * generate a running directory.
