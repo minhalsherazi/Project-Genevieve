@@ -1,0 +1,742 @@
+// Opendaylight Controller and Java packages are imported 
+
+package org.opendaylight.tutorial.tutorial_L2_forwarding.internal;
+
+
+
+// Java utilities
+
+import java.net.InetAddress;
+
+import java.net.URI;
+
+import java.net.UnknownHostException;
+
+import java.util.List;
+
+import java.util.ArrayList;
+
+import java.util.Collections;
+
+import java.util.HashSet;
+
+import java.util.Set;
+
+import java.util.Timer;
+
+import java.util.TimerTask;
+
+import java.io.IOException;
+
+import java.lang.String;
+
+import java.util.Map;
+
+import java.util.HashMap;
+
+import java.util.concurrent.ConcurrentHashMap;
+
+
+
+// OpenDaylight Libraries
+
+import org.slf4j.Logger;
+
+import org.slf4j.LoggerFactory;
+
+import org.osgi.framework.Bundle;
+
+import org.osgi.framework.BundleContext;
+
+import org.osgi.framework.BundleException;
+
+import org.osgi.framework.FrameworkUtil;
+
+import org.opendaylight.controller.sal.core.ConstructionException;
+
+import org.opendaylight.controller.sal.core.Node;
+
+import org.opendaylight.controller.sal.core.NodeConnector;
+
+import org.opendaylight.controller.sal.flowprogrammer.IFlowProgrammerService;
+
+import org.opendaylight.controller.sal.flowprogrammer.Flow;
+
+import org.opendaylight.controller.sal.packet.ARP;
+
+import org.opendaylight.controller.sal.packet.BitBufferHelper;
+
+import org.opendaylight.controller.sal.packet.Ethernet;
+
+import org.opendaylight.controller.sal.packet.ICMP;
+
+import org.opendaylight.controller.sal.packet.IDataPacketService;
+
+import org.opendaylight.controller.sal.packet.IListenDataPacket;
+
+import org.opendaylight.controller.sal.packet.IPv4;
+
+import org.opendaylight.controller.sal.packet.Packet;
+
+import org.opendaylight.controller.sal.packet.PacketResult;
+
+import org.opendaylight.controller.sal.packet.RawPacket;
+
+import org.opendaylight.controller.sal.packet.UDP;
+
+import org.opendaylight.controller.sal.action.Action;
+
+import org.opendaylight.controller.sal.action.Output;
+
+import org.opendaylight.controller.sal.action.Flood;
+
+import org.opendaylight.controller.sal.match.Match;
+
+import org.opendaylight.controller.sal.match.MatchType;
+
+import org.opendaylight.controller.sal.match.MatchField;
+
+import org.opendaylight.controller.sal.utils.EtherTypes;
+
+import org.opendaylight.controller.sal.utils.Status;
+
+import org.opendaylight.controller.sal.utils.NetUtils;
+
+import org.opendaylight.controller.switchmanager.ISwitchManager;
+
+import org.opendaylight.controller.switchmanager.Subnet;
+
+
+
+
+
+// Implementation of Switch
+
+
+
+public class TutorialL2Forwarding implements IListenDataPacket {
+
+
+
+    private static final Logger logger = LoggerFactory.getLogger(TutorialL2Forwarding.class);
+
+    private static final String UDP_SOURCE_PORT = null;
+
+    public  String datapacket="Virus";
+
+    private ISwitchManager switchManager = null;
+
+    private IFlowProgrammerService programmer = null;
+
+    private IDataPacketService dataPacketService = null;
+
+    private Map<Long, NodeConnector> mac_to_port = new HashMap<Long, NodeConnector>();
+
+    private String function = "switch";
+
+    
+
+    
+
+    public Map<Long,Integer> table= new HashMap<Long, Integer>();
+
+    public Map<Long,Integer> black= new HashMap<Long, Integer>();
+
+    public Map<Long, Integer> ddos= new HashMap<Long, Integer>();
+
+    public String sqlcheck ="Virus";   // SQL Payload Check Data
+
+   
+
+
+
+    // Set Data Packet Service
+
+    void setDataPacketService(IDataPacketService s) {
+
+        this.dataPacketService = s;
+
+    }
+
+
+
+    // Unset Data Packet Service
+
+    void unsetDataPacketService(IDataPacketService s) {
+
+        if (this.dataPacketService == s) {
+
+            this.dataPacketService = null;
+
+        }
+
+    }
+
+
+
+    // Flow Programmer Service
+
+    public void setFlowProgrammerService(IFlowProgrammerService s)
+
+    {
+
+        this.programmer = s;
+
+    }
+
+
+
+    //Unset Flow Programmer Service
+
+    public void unsetFlowProgrammerService(IFlowProgrammerService s) {
+
+        if (this.programmer == s) {
+
+            this.programmer = null;
+
+        }
+
+    }
+
+
+
+    //Set Switch Manager
+
+    void setSwitchManager(ISwitchManager s) {
+
+        logger.debug("SwitchManager set");
+
+        this.switchManager = s;
+
+    }
+
+
+
+    //Unset Switch Manager
+
+    void unsetSwitchManager(ISwitchManager s) {
+
+        if (this.switchManager == s) {
+
+            logger.debug("SwitchManager removed!");
+
+            this.switchManager = null;
+
+        }
+
+    }
+
+
+
+    // INITIALIZATION OF FUNCTIONALITY OF FORWARDING SWITCH/HUB
+
+    void init() {
+
+        logger.info("Initialized");
+
+
+
+        // ARP Bundles are stopped to affect the operation
+
+        BundleContext bundleContext = FrameworkUtil.getBundle(this.getClass()).getBundleContext();
+
+        for(Bundle bundle : bundleContext.getBundles()) {
+
+            if (bundle.getSymbolicName().contains("simpleforwarding")) {
+
+                try {
+
+                    bundle.uninstall();
+
+                } catch (BundleException e) {
+
+                    logger.error("Exception in Bundle uninstall "+bundle.getSymbolicName(), e); 
+
+                }   
+
+            }   
+
+        }
+
+        
+
+        //Creating timers which are executed for different operations after different intervals
+
+
+
+        //'timer' for Checking of DOS attack
+
+        Timer timer = new Timer();
+
+        timer.scheduleAtFixedRate(new Doschecker(), 25000, 25000);
+
+
+
+        // 'timer2' for checking DDOS attack
+
+        Timer timer2 = new Timer();
+
+        timer2.scheduleAtFixedRate(new DDOSchecker(),25000, 15000);
+
+
+
+        //'timer3' for recycling the blocklisted addresses
+
+        Timer timer3 = new Timer();
+
+        timer3.scheduleAtFixedRate(new BlackListCleaner(),25000, 30000);
+
+
+
+        //'timer4' for checking of SQL attack
+
+         Timer timer4 = new Timer();
+
+        timer3.scheduleAtFixedRate(new sqlchecker(),10000, 20000);
+
+    }
+
+
+
+        // DOS Checker function
+
+        public class Doschecker extends TimerTask{
+
+        
+
+            public void run(){
+
+            System.out.println("Checking the existence of DOS attack...\n");
+
+           
+
+            table.clear();
+
+                            }
+
+                                                }
+
+
+
+
+
+         // DDOS hecker function                                                   
+
+        public class DDOSchecker extends TimerTask{
+
+        
+
+        public void run(){
+
+            System.out.println("Checking the existence of DDOS...\n");
+
+           ddoscheker();
+
+           ddos.clear();
+
+           
+
+                        }
+
+                                                    }
+
+
+
+
+
+        // SQL Checker Function                                       
+
+        public class sqlchecker extends TimerTask{
+
+        
+
+        public void run()
+
+        {  
+
+           if(datapacket==sqlcheck)
+
+           {
+
+           System.out.println("SQL Injected, WARNING!....\n");
+
+           }
+
+        }
+
+                                                    }
+
+
+
+
+
+        //Blocked Addresses Recycler                                          
+
+        public class BlackListCleaner extends TimerTask{
+
+        
+
+        public void run()
+
+                        {
+
+            System.out.println("Making Blacklist Empty.....\n");
+
+            black.clear();
+
+           
+
+                        }
+
+                                                        }
+
+
+
+      
+
+        // Function sends UDP Packet after regular interval (SQL Implementation)                                              
+
+         public void sendPacket(URI destination, String packet)
+
+            throws IOException {
+
+        int port = destination.getPort();
+
+        InetAddress address = InetAddress.getByName(destination.getHost());
+
+        byte[] destinationAddress = address.getAddress();
+
+        
+
+                                 }
+
+
+
+        //Sub-function of Send UDP Packet      [Code Refernece: StackOverflow.com]               
+
+        private void sendPacket(byte[] destinationAddress, int port, byte[] data)
+
+            throws IOException {
+
+        int dataLength = data.length;
+
+        int headerLength;
+
+        byte[] sourceAddress = InetAddress.getLocalHost().getAddress();
+
+        String payload="Virus";
+
+        URI destination = URI.create("udp://192.168.40.33:6006");
+
+        sendPacket(destination, payload);
+
+                
+
+                }
+
+
+
+
+
+        // DDOS Checker Function
+
+        public void ddoscheker()
+
+    {
+
+        Integer count=0;
+
+        for  (Integer c: ddos.values())
+
+            {  count=count+c; }
+
+        if (count != null && count >20)
+
+            { System.out.println("DDOS suspected, Server is being stopped for 5s.\n");
+
+               //PacketResult.IGNORED;
+
+             table.clear(); 
+
+            
+
+            try {
+
+            Thread.sleep(25000);                 //5 seconds
+
+                }       
+
+            catch(InterruptedException ex) {
+
+            Thread.currentThread().interrupt();
+
+                                            }       
+
+            }
+
+    }
+
+   
+
+
+
+
+
+    // This function is called when at least one dependency become unsatisfied
+
+    void destroy() {
+
+                    }
+
+
+
+
+
+    // This function is called after 'init()'.
+
+    void start() {
+
+        logger.info("Started");
+
+                }
+
+
+
+
+
+    // The function is called when services are unregistered and it is followed by'destroy()' function.
+
+    void stop() {
+
+        logger.info("Stopped");
+
+                }
+
+
+
+
+
+    // Function to flood packet to all the nodes when it is operated as 'hub' [Code Refernece: SDNHUB.ORG]
+
+    private void floodPacket(RawPacket inPkt) {
+
+        NodeConnector incoming_connector = inPkt.getIncomingNodeConnector();
+
+        Node incoming_node = incoming_connector.getNode();
+
+
+
+        Set<NodeConnector> nodeConnectors =
+
+                this.switchManager.getUpNodeConnectors(incoming_node);
+
+
+
+        for (NodeConnector p : nodeConnectors) {
+
+            if (!p.equals(incoming_connector)) {
+
+                try {
+
+                    RawPacket destPkt = new RawPacket(inPkt);
+
+                    destPkt.setOutgoingNodeConnector(p);
+
+                    this.dataPacketService.transmitDataPacket(destPkt);
+
+                } catch (ConstructionException e2) {
+
+                    continue;
+
+                }
+
+            }
+
+        }
+
+                                                }
+
+
+
+
+
+    // Function to receive data packets at Forwarding switch and firewall operable domain.        
+
+    @Override
+
+    public PacketResult receiveDataPacket(RawPacket inPkt) {
+
+        //System.out.println("Received Data Packet");
+
+        if (inPkt == null) {
+
+            return PacketResult.IGNORED;
+
+        }
+
+
+
+        NodeConnector incoming_connector = inPkt.getIncomingNodeConnector();
+
+
+
+        // Hub implementation
+
+        if (function.equals("hub")) {
+
+            floodPacket(inPkt);
+
+        } else {                    //Checks the ethernet feasibility
+
+
+
+            Packet formattedPak = this.dataPacketService.decodeDataPacket(inPkt);
+
+            if (!(formattedPak instanceof Ethernet)) {
+
+                return PacketResult.IGNORED;
+
+            }
+
+
+
+            //Firewall Operation in this function which learns the address
+
+            if (learnSourceIP(formattedPak, incoming_connector)==false)
+
+                {return PacketResult.IGNORED;}
+
+            
+
+            //Function to find connector associated to IP
+
+            NodeConnector outgoing_connector = 
+
+                knowDestinationIP(formattedPak);
+
+            if (outgoing_connector == null) {
+
+                floodPacket(inPkt);
+
+            } else {
+
+                
+
+            //Table Updated after forwarding of packet
+
+                inPkt.setOutgoingNodeConnector(outgoing_connector);
+
+                this.dataPacketService.transmitDataPacket(inPkt);
+
+            }
+
+        }
+
+        return PacketResult.CONSUME;
+
+    }
+
+
+
+    //Implementation of firewall function
+
+
+
+    public boolean learnSourceIP(Packet formattedPak, NodeConnector incoming_connector) {
+
+        byte[] srcIP = ((Ethernet)formattedPak).getSourceMACAddress();
+
+        long srcIP_val = BitBufferHelper.toNumber(srcIP);
+
+
+
+        if (this.black.get(srcIP_val) != null)
+
+        { 
+
+            System.out.println("Blocked address is trying to access, hence packet dropped \n");
+
+            return false;
+
+        }
+
+        else
+
+        {
+
+            this.mac_to_port.put(srcIP_val, incoming_connector);
+
+            Integer access = table.get(srcIP_val);
+
+            if(access != null)
+
+            {
+
+                if(access > 10)
+
+                {
+
+                    black.put(srcIP_val, 1);
+
+                    System.out.println("DOS suspected and Packet is dropped from H" + srcIP_val+"\n");
+
+                    return false;
+
+                }
+
+                else
+
+                {
+
+                    table.put(srcIP_val,access+1);
+
+                    ddos.put(srcIP_val,access+1);
+
+                    
+
+                }
+
+            }
+
+            else
+
+            {
+
+                table.put(srcIP_val,1);
+
+                ddos.put(srcIP_val,1);
+
+            }
+
+           
+
+            return true;
+
+        }
+
+            
+
+         
+
+             }
+
+        
+
+        
+
+    //Function to receive the output connector/port from switch
+
+    private NodeConnector knowDestinationIP(Packet formattedPak) {
+
+        byte[] dstIP = ((Ethernet)formattedPak).getDestinationMACAddress();
+
+        long dstIP_val = BitBufferHelper.toNumber(dstIP);
+
+        return this.mac_to_port.get(dstIP_val) ;
+
+    }
+
+
+
+}
+
